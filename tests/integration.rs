@@ -1,0 +1,260 @@
+use approx::assert_relative_eq;
+use quadtree::{
+    config::QuadTreeConfig,
+    geometry::Rect,
+    oracle::QuadOracle,
+    policy::{CellScore, LargestAreaPolicy, MaxWeightedScorePolicy},
+    run, run_with_policy,
+};
+
+const TOL: f64 = 1e-12;
+
+#[derive(Debug, Clone, Copy)]
+struct Score(f64);
+
+impl CellScore<f64> for Score {
+    fn score(&self) -> f64 {
+        self.0
+    }
+}
+
+fn domain() -> Rect<f64> {
+    Rect::new(0.0, 1.0, 0.0, 1.0).unwrap()
+}
+
+struct ConstantScore {
+    score: f64,
+}
+
+impl QuadOracle<f64> for ConstantScore {
+    type Data = Score;
+
+    fn evaluate(&mut self, _bounds: Rect<f64>) -> Self::Data {
+        Score(self.score)
+    }
+}
+
+#[test]
+fn target_score_can_terminate_immediately_after_initialisation() {
+    let config = QuadTreeConfig::new(1e-3)
+        .with_max_iter(100)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(1_000);
+
+    let result = run(domain(), ConstantScore { score: 1e-6 }, config).unwrap();
+
+    assert_eq!(result.tree.leaf_count(), 1);
+    assert!(result.tree.iter().all(|leaf| leaf.data().score() <= 1e-3));
+}
+
+#[test]
+fn max_iteration_policy_limits_refinement() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(3)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(1_000);
+
+    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
+
+    // One split per iteration: 1 -> 4 -> 7 -> 10.
+    assert_eq!(result.tree.leaf_count(), 10);
+}
+
+#[test]
+fn max_depth_limits_refinement() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(100)
+        .with_max_depth(1)
+        .with_target_window(1)
+        .with_max_leaves(1_000);
+
+    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
+
+    assert_eq!(result.tree.max_leaf_depth(), 1);
+    assert_eq!(result.tree.leaf_count(), 4);
+}
+
+#[test]
+fn max_leaves_limits_refinement() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(100)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(7);
+
+    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
+
+    // 1 -> 4 -> 7, then next split would require 10 leaves.
+    assert_eq!(result.tree.leaf_count(), 7);
+}
+
+#[test]
+fn output_tree_preserves_domain_area() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(5)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(1_000);
+
+    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
+
+    let total_area: f64 = result.tree.iter().map(|leaf| leaf.area()).sum();
+
+    assert_relative_eq!(total_area, domain().area(), epsilon = TOL);
+}
+
+struct GaussianBump {
+    cx: f64,
+    cy: f64,
+    sigma: f64,
+}
+
+impl QuadOracle<f64> for GaussianBump {
+    type Data = Score;
+
+    fn evaluate(&mut self, bounds: Rect<f64>) -> Self::Data {
+        let c = bounds.centre();
+
+        let dx = c.x - self.cx;
+        let dy = c.y - self.cy;
+        let r2 = dx * dx + dy * dy;
+
+        let value = (-r2 / (2.0 * self.sigma * self.sigma)).exp();
+
+        Score(value)
+    }
+}
+
+#[test]
+fn weighted_score_policy_refines_near_high_score_region() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(8)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(10_000);
+
+    let result = run_with_policy(
+        domain(),
+        GaussianBump {
+            cx: 0.75,
+            cy: 0.75,
+            sigma: 0.12,
+        },
+        MaxWeightedScorePolicy,
+        config,
+    )
+    .unwrap();
+
+    assert!(result.tree.leaf_count() > 1);
+
+    let deepest = result.tree.iter().max_by_key(|leaf| leaf.depth()).unwrap();
+
+    let c = deepest.centre();
+
+    // The most refined region should be in the upper-right half,
+    // near the high-score bump.
+    assert!(c.x > 0.5);
+    assert!(c.y > 0.5);
+}
+
+#[test]
+fn largest_area_policy_refines_geometrically_even_if_scores_are_localised() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(4)
+        .with_max_depth(8)
+        .with_target_window(1)
+        .with_max_leaves(10_000);
+
+    let result = run_with_policy(
+        domain(),
+        GaussianBump {
+            cx: 0.9,
+            cy: 0.9,
+            sigma: 0.05,
+        },
+        LargestAreaPolicy,
+        config,
+    )
+    .unwrap();
+
+    assert_eq!(result.tree.leaf_count(), 13);
+
+    let max_depth = result.tree.max_leaf_depth();
+
+    // LargestAreaPolicy should produce relatively balanced refinement.
+    assert!(max_depth <= 2);
+}
+
+struct ErrorDecaysWithSize;
+
+impl QuadOracle<f64> for ErrorDecaysWithSize {
+    type Data = Score;
+
+    fn evaluate(&mut self, bounds: Rect<f64>) -> Self::Data {
+        Score(bounds.diameter())
+    }
+}
+
+#[test]
+fn score_target_drives_refinement_until_cells_are_small() {
+    let config = QuadTreeConfig::new(0.2)
+        .with_max_iter(200)
+        .with_max_depth(10)
+        .with_target_window(1)
+        .with_max_leaves(100_000);
+
+    let result = run(domain(), ErrorDecaysWithSize, config).unwrap();
+
+    let max_score = result
+        .tree
+        .iter()
+        .map(|leaf| leaf.data().score())
+        .fold(0.0_f64, f64::max);
+
+    assert!(max_score <= 0.2);
+}
+
+struct Checkerboard {
+    threshold_depth_score: f64,
+}
+
+impl QuadOracle<f64> for Checkerboard {
+    type Data = Score;
+
+    fn evaluate(&mut self, bounds: Rect<f64>) -> Self::Data {
+        let c = bounds.centre();
+
+        let ix = (c.x * 8.0).floor() as i32;
+        let iy = (c.y * 8.0).floor() as i32;
+
+        if (ix + iy) % 2 == 0 {
+            Score(self.threshold_depth_score)
+        } else {
+            Score(0.0)
+        }
+    }
+}
+
+#[test]
+fn discontinuous_score_field_produces_nonuniform_tree() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(10)
+        .with_max_depth(6)
+        .with_target_window(1)
+        .with_max_leaves(10_000);
+
+    let result = run(
+        domain(),
+        Checkerboard {
+            threshold_depth_score: 1.0,
+        },
+        config,
+    )
+    .unwrap();
+
+    assert!(result.tree.leaf_count() > 1);
+    assert!(result.tree.iter().any(|leaf| leaf.data().score() > 0.0));
+    assert!(result.tree.iter().any(|leaf| leaf.data().score() == 0.0));
+}

@@ -1,0 +1,32 @@
+[package]
+name = "quadtree"
+version = "0.1.0"
+edition = "2024"
+rust-version="1.85"
+description = "Rust project template with library and binary"
+license = "MIT"
+
+[lib]
+name = "quadtree"
+path = "src/lib.rs"
+
+
+[dependencies]
+num-traits = "0.2.19"
+thiserror = "2.0.18"
+trellis-runner = "0.4.1"
+
+[dev-dependencies]
+approx = "0.5.1"
+criterion = "0.5"
+
+# [[bench]]
+# name = "hello_bench"
+# harness = false
+
+[profile.dev]
+debug = true
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
