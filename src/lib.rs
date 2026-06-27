@@ -170,6 +170,8 @@
 //! can be constructed by composing small, reusable building blocks rather than
 //! modifying the underlying tree implementation.
 
+#![allow(dead_code)]
+
 mod cell;
 pub mod config;
 mod error;
@@ -197,6 +199,7 @@ use trellis_runner::{
     GenerateBuilderFallible, MaxIterationPolicy, NoProgressPolicy, TargetValuePolicy, TrellisFloat,
 };
 
+#[allow(clippy::type_complexity)]
 pub fn run<T, O>(
     domain: Rect<T>,
     oracle: O,
@@ -210,6 +213,7 @@ where
     run_with_policy(domain, oracle, MaxWeightedScorePolicy, config)
 }
 
+#[allow(clippy::type_complexity)]
 pub fn run_with_policy<T, O, P>(
     domain: Rect<T>,
     mut oracle: O,
@@ -255,7 +259,7 @@ where
 
     Ok(QuadTreeResult {
         tree: output.result,
-        scaler: scaler,
+        scaler,
         summary: output.summary,
         termination: output.termination,
     })
