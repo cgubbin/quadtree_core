@@ -84,13 +84,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = run_with_policy(domain, SineCosine, MaxWeightedScorePolicy, config)?;
 
     let max_score = result
-        .tree
         .iter()
         .map(|leaf| leaf.data().score())
         .fold(0.0_f64, f64::max);
 
-    println!("leaves: {}", result.tree.leaf_count());
-    println!("max depth: {}", result.tree.max_leaf_depth());
+    println!("leaves: {}", result.leaf_count());
+    println!("max depth: {}", result.max_leaf_depth());
     println!("max score: {max_score}");
     println!("termination: {:?}", result.termination);
 

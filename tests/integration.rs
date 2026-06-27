@@ -44,7 +44,7 @@ fn output_tree_preserves_domain_area() {
 
     let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
 
-    let total_area: f64 = result.tree.iter().map(|leaf| leaf.area()).sum();
+    let total_area: f64 = result.iter().map(|leaf| leaf.area()).sum();
 
     assert_relative_eq!(total_area, domain().area(), epsilon = TOL);
 }
@@ -91,9 +91,9 @@ fn weighted_score_policy_refines_near_high_score_region() {
     )
     .unwrap();
 
-    assert!(result.tree.leaf_count() > 1);
+    assert!(result.leaf_count() > 1);
 
-    let deepest = result.tree.iter().max_by_key(|leaf| leaf.depth()).unwrap();
+    let deepest = result.iter().max_by_key(|leaf| leaf.depth()).unwrap();
 
     let c = deepest.centre();
 
@@ -124,7 +124,6 @@ fn score_target_drives_refinement_until_cells_are_small() {
     let result = run(domain(), ErrorDecaysWithSize, config).unwrap();
 
     let max_score = result
-        .tree
         .iter()
         .map(|leaf| leaf.data().score())
         .fold(0.0_f64, f64::max);
@@ -170,9 +169,9 @@ fn discontinuous_score_field_produces_nonuniform_tree() {
     )
     .unwrap();
 
-    assert!(result.tree.leaf_count() > 1);
-    assert!(result.tree.iter().any(|leaf| leaf.data().score() > 0.0));
-    assert!(result.tree.iter().any(|leaf| leaf.data().score() == 0.0));
+    assert!(result.leaf_count() > 1);
+    assert!(result.iter().any(|leaf| leaf.data().score() > 0.0));
+    assert!(result.iter().any(|leaf| leaf.data().score() == 0.0));
 }
 
 #[test]
@@ -186,8 +185,8 @@ fn target_score_can_terminate_after_first_policy_check() {
     let result = run(domain(), ConstantScore { score: 1e-6 }, config).unwrap();
 
     // Trellis performs one step before the target policy observes convergence.
-    assert_eq!(result.tree.leaf_count(), 4);
-    assert!(result.tree.iter().all(|leaf| leaf.data().score() <= 1e-3));
+    assert_eq!(result.leaf_count(), 4);
+    assert!(result.iter().all(|leaf| leaf.data().score() <= 1e-3));
 }
 
 #[test]
@@ -200,7 +199,7 @@ fn max_iteration_policy_limits_refinement() {
     let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
 
     // Current Trellis semantics give four procedure steps for max_iter = 3.
-    assert_eq!(result.tree.leaf_count(), 13);
+    assert_eq!(result.leaf_count(), 13);
 }
 
 #[test]
@@ -248,14 +247,40 @@ fn largest_area_policy_refines_geometrically_even_if_scores_are_localised() {
 
     // Current Trellis semantics give five procedure steps for max_iter = 4:
     // 1 + 5 * 3 = 16 leaves.
-    assert_eq!(result.tree.leaf_count(), 16);
+    assert_eq!(result.leaf_count(), 16);
 
     // More importantly, LargestAreaPolicy should remain geometrically balanced.
-    assert!(result.tree.max_leaf_depth() <= 2);
+    assert!(result.max_leaf_depth() <= 2);
 
-    assert_relative_eq!(
-        result.tree.total_leaf_area(),
-        domain().area(),
-        epsilon = TOL
-    );
+    assert_relative_eq!(result.total_leaf_area(), domain().area(), epsilon = TOL);
+}
+
+#[test]
+fn oracle_receives_raw_domain_coordinates() {
+    struct CaptureRaw;
+
+    impl QuadOracle<f64> for CaptureRaw {
+        type Data = Score;
+
+        fn evaluate(&mut self, bounds: Rect<f64>) -> Self::Data {
+            // Root evaluation should see raw domain.
+            assert!(bounds.x_min >= 10.0);
+            assert!(bounds.x_max <= 20.0);
+            assert!(bounds.y_min >= -5.0);
+            assert!(bounds.y_max <= 5.0);
+
+            Score(0.0)
+        }
+    }
+
+    let domain = Rect::new(10.0, 20.0, -5.0, 5.0).unwrap();
+
+    let config = QuadTreeConfig::new(1e-3)
+        .with_max_iter(1)
+        .with_max_depth(4)
+        .with_max_leaves(100);
+
+    let result = run(domain, CaptureRaw, config).unwrap();
+
+    assert_eq!(result.root(), domain);
 }

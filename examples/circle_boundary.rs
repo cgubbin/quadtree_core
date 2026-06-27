@@ -116,14 +116,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let boundary_cells = result
-        .tree
         .iter()
         .filter(|leaf| leaf.data().score() > 0.0)
         .count();
 
-    println!("leaves: {}", result.tree.leaf_count());
+    println!("leaves: {}", result.leaf_count());
     println!("boundary cells: {boundary_cells}");
-    println!("max depth: {}", result.tree.max_leaf_depth());
+    println!("max depth: {}", result.max_leaf_depth());
     println!("termination: {:?}", result.termination);
 
     Ok(())

@@ -17,6 +17,7 @@ use crate::{
     geometry::Rect,
     oracle::QuadOracle,
     policy::RefinementPolicy,
+    scaling::Scaler2D,
     tree::{QuadTree, TreeError},
 };
 
@@ -35,19 +36,20 @@ pub enum EvolutionError<T> {
 #[derive(Debug, Clone)]
 pub struct QuadTreeRefiner<T, P> {
     policy: P,
-    _marker: std::marker::PhantomData<T>,
+    scaler: Scaler2D<T>,
 }
 
 impl<T, P> QuadTreeRefiner<T, P> {
-    pub fn new(policy: P) -> Self {
-        Self {
-            policy,
-            _marker: std::marker::PhantomData,
-        }
+    pub fn new(policy: P, scaler: Scaler2D<T>) -> Self {
+        Self { policy, scaler }
     }
 
     pub fn policy(&self) -> &P {
         &self.policy
+    }
+
+    pub fn scaler(&self) -> &Scaler2D<T> {
+        &self.scaler
     }
 }
 
@@ -104,7 +106,14 @@ where
             .choose_leaf(state)
             .ok_or(EvolutionError::NoLeafSelected)?;
 
-        state.split_leaf(index, |bounds: Rect<T>| problem.evaluate(bounds))?;
+        state.split_leaf(index, |scaled_bounds: Rect<T>| {
+            let raw_bounds = self
+                .scaler
+                .to_raw_rect(scaled_bounds)
+                .expect("scaled child bounds should lie inside scaled domain");
+
+            problem.evaluate(raw_bounds)
+        })?;
 
         Ok(())
     }
@@ -164,9 +173,11 @@ mod tests {
 
     #[test]
     fn initialise_is_noop_for_valid_state() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let mut state = QuadTree::new(root(), Score(16.0), 8, 100);
+        let mut state = QuadTree::new(scaled_domain, Score(16.0), 8, 100);
 
         refiner
             .initialise_fallible(&mut oracle, &mut state)
@@ -177,9 +188,11 @@ mod tests {
 
     #[test]
     fn one_step_splits_one_leaf_into_four() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let mut state = QuadTree::new(root(), Score(16.0), 8, 100);
+        let mut state = QuadTree::new(scaled_domain, Score(16.0), 8, 100);
 
         let token = trellis_runner::CancellationToken::new();
 
@@ -197,9 +210,11 @@ mod tests {
 
     #[test]
     fn repeated_steps_refine_tree() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let mut state = QuadTree::new(root(), Score(16.0), 8, 100);
+        let mut state = QuadTree::new(scaled_domain, Score(16.0), 8, 100);
 
         let token = trellis_runner::CancellationToken::new();
 
@@ -215,9 +230,11 @@ mod tests {
 
     #[test]
     fn step_respects_max_depth() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let mut state = QuadTree::new(root(), Score(16.0), 0, 100);
+        let mut state = QuadTree::new(scaled_domain, Score(16.0), 0, 100);
 
         let token = trellis_runner::CancellationToken::new();
 
@@ -233,9 +250,11 @@ mod tests {
 
     #[test]
     fn step_respects_max_leaves() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let mut state = QuadTree::new(root(), Score(16.0), 8, 3);
+        let mut state = QuadTree::new(scaled_domain, Score(16.0), 8, 3);
 
         let token = trellis_runner::CancellationToken::new();
 
@@ -251,9 +270,11 @@ mod tests {
 
     #[test]
     fn max_score_policy_refines_high_score_region() {
-        let refiner = QuadTreeRefiner::<f64, MaxScorePolicy>::new(MaxScorePolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, MaxScorePolicy>::new(MaxScorePolicy, scaler);
         let mut oracle = CentreScoreOracle;
-        let mut state = QuadTree::new(root(), Score(0.0), 8, 100);
+        let mut state = QuadTree::new(scaled_domain, Score(0.0), 8, 100);
 
         let token = trellis_runner::CancellationToken::new();
 
@@ -287,9 +308,11 @@ mod tests {
 
     #[test]
     fn finalise_returns_tree_clone() {
-        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy);
+        let scaler = Scaler2D::unit_square(root()).unwrap();
+        let scaled_domain = scaler.scaled_domain();
+        let refiner = QuadTreeRefiner::<f64, LargestAreaPolicy>::new(LargestAreaPolicy, scaler);
         let mut oracle = AreaOracle;
-        let state = QuadTree::new(root(), Score(16.0), 8, 100);
+        let state = QuadTree::new(scaled_domain, Score(16.0), 8, 100);
 
         let output = refiner.finalise_fallible(&mut oracle, &state).unwrap();
 

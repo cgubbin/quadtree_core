@@ -40,7 +40,6 @@
 use crate::{cell::Cell, geometry::Rect, scaling::ScalerError};
 
 use num_traits::Float;
-use trellis_runner::{Progress, TrellisFloat, UserState};
 
 #[derive(thiserror::Error, Debug)]
 pub enum TreeError<T> {

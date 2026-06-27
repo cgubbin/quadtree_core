@@ -87,6 +87,34 @@ where
             y: self.scaled.y_min + uy * self.scaled.height(),
         })
     }
+
+    pub fn to_raw_rect(&self, rect: Rect<T>) -> Result<Rect<T>, ScalerError<T>> {
+        let lower = self.to_raw(Point {
+            x: rect.x_min,
+            y: rect.y_min,
+        })?;
+
+        let upper = self.to_raw(Point {
+            x: rect.x_max,
+            y: rect.y_max,
+        })?;
+
+        Rect::new(lower.x, upper.x, lower.y, upper.y)
+    }
+
+    pub fn to_scaled_rect(&self, rect: Rect<T>) -> Result<Rect<T>, ScalerError<T>> {
+        let lower = self.to_scaled(Point {
+            x: rect.x_min,
+            y: rect.y_min,
+        })?;
+
+        let upper = self.to_scaled(Point {
+            x: rect.x_max,
+            y: rect.y_max,
+        })?;
+
+        Rect::new(lower.x, upper.x, lower.y, upper.y)
+    }
 }
 
 #[cfg(test)]

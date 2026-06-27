@@ -122,7 +122,7 @@
 //!
 //! let result = run(domain, Oracle, config)?;
 //!
-//! println!("leaf count = {}", result.tree.leaf_count());
+//! println!("leaf count = {}", result.leaf_count());
 //! # Ok(())
 //! # }
 //! ```
@@ -190,12 +190,11 @@ pub use {
     policy::{CellScore, MaxWeightedScorePolicy, RefinementPolicy},
 };
 
-use crate::{evolution::QuadTreeRefiner, tree::QuadTree};
+use crate::{evolution::QuadTreeRefiner, scaling::Scaler2D, tree::QuadTree};
 
 use num_traits::{Float, FromPrimitive};
 use trellis_runner::{
-    EngineFailure, GenerateBuilderFallible, MaxIterationPolicy, NoProgressPolicy,
-    TargetValuePolicy, TrellisFloat,
+    GenerateBuilderFallible, MaxIterationPolicy, NoProgressPolicy, TargetValuePolicy, TrellisFloat,
 };
 
 pub fn run<T, O>(
@@ -223,11 +222,20 @@ where
     O::Data: CellScore<T> + Clone + Send + Sync + 'static,
     P: RefinementPolicy<T, O::Data> + Send + Sync + 'static,
 {
+    let scaler = Scaler2D::unit_square(domain)?;
+
+    let scaled_domain = scaler.scaled_domain();
+
     let root_data = oracle.evaluate(domain);
 
-    let state = QuadTree::new(domain, root_data, config.max_depth, config.max_leaves);
+    let state = QuadTree::new(
+        scaled_domain,
+        root_data,
+        config.max_depth,
+        config.max_leaves,
+    );
 
-    let procedure = QuadTreeRefiner::<T, P>::new(policy);
+    let procedure = QuadTreeRefiner::<T, P>::new(policy, scaler.clone());
 
     let engine = <QuadTreeRefiner<T, P> as GenerateBuilderFallible>::build_for(procedure, oracle)
         .and_policy(MaxIterationPolicy::new(config.max_iter))
@@ -247,6 +255,7 @@ where
 
     Ok(QuadTreeResult {
         tree: output.result,
+        scaler: scaler,
         summary: output.summary,
         termination: output.termination,
     })

@@ -54,8 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = run_with_policy(domain, ConstantOracle, LargestAreaPolicy, config)?;
 
-    println!("leaves: {}", result.tree.leaf_count());
-    println!("max depth: {}", result.tree.max_leaf_depth());
+    println!("leaves: {}", result.leaf_count());
+    println!("max depth: {}", result.max_leaf_depth());
     println!("termination: {:?}", result.termination);
 
     Ok(())
