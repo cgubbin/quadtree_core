@@ -24,7 +24,7 @@
 //! This is a representative pattern for adaptive approximation, interpolation,
 //! and numerical quadrature.
 
-use quadtree::{
+use quadtree_core::{
     config::QuadTreeConfig,
     geometry::Rect,
     oracle::QuadOracle,

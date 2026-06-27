@@ -17,7 +17,7 @@
 //! No numerical approximation is being solved here. The oracle is deliberately
 //! trivial so that the geometry of the refinement is isolated.
 
-use quadtree::{
+use quadtree_core::{
     config::QuadTreeConfig,
     geometry::Rect,
     oracle::QuadOracle,

@@ -88,7 +88,7 @@
 //! refinement policy.
 //!
 //! ```no_run
-//! use quadtree::{
+//! use quadtree_core::{
 //!     run,
 //!     QuadTreeConfig,
 //!     Rect,

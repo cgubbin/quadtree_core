@@ -18,7 +18,7 @@
 //! - mesh generation around boundaries.
 //!
 //! The result is a non-uniform tree concentrated around the circle boundary.
-use quadtree::{
+use quadtree_core::{
     config::QuadTreeConfig,
     geometry::{Point, Rect},
     oracle::QuadOracle,

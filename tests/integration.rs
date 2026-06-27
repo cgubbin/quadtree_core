@@ -1,5 +1,5 @@
 use approx::assert_relative_eq;
-use quadtree::{
+use quadtree_core::{
     config::QuadTreeConfig,
     geometry::Rect,
     oracle::QuadOracle,

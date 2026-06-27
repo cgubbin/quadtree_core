@@ -1,271 +1,172 @@
-# Rust Project
+# quadtree_core
 
-## Overview
+## Adaptive Quadtree Refinement
 
-This template provides a modern Rust development environment using:
+`quadtree` is a generic adaptive spatial subdivision library for two-dimensional
+rectangular domains.
 
-- **Nix flakes** for reproducibility
-- **Fenix** for a consistent Rust toolchain
-- **Crane** for Nix-native Cargo builds and checks
-- **Cargo** for standard Rust workflows
-- **just** for ergonomic command execution
+The crate separates **geometry**, **evaluation**, and **refinement strategy**
+into independent components, allowing the same refinement engine to be reused
+across a wide range of numerical algorithms.
 
-It includes:
+Typical applications include:
 
-- a **library target** (`src/lib.rs`)
-- a **binary target** (`src/main.rs`)
-- a **CLI interface** using `clap`
-- common tooling for testing, linting, coverage, and benchmarking
+- adaptive quadrature,
+- finite element mesh generation,
+- adaptive interpolation,
+- image processing,
+- implicit geometry,
+- level-set methods,
+- contour and root finding,
+- spatial error estimation,
+- any algorithm requiring adaptive subdivision of a rectangular domain.
 
----
+The library is built on top of the
+[`trellis_runner`](https://crates.io/crates/trellis_runner) engine, providing
+deterministic execution, configurable stopping criteria, progress reporting,
+and cancellation support.
 
-## Tooling Architecture
+## Design
 
-This template intentionally separates concerns:
+A quadtree consists of a collection of rectangular cells covering the domain.
+Beginning with a single root cell, the solver repeatedly
 
-### Toolchain (Fenix)
+1. selects one leaf according to a refinement policy,
+2. subdivides that cell into four children,
+3. evaluates each child using a user-provided oracle,
+4. stores the resulting data on the new cells.
 
-Provides:
+This process continues until one of the configured stopping criteria is met.
 
-- `rustc`
-- `cargo`
-- `clippy`
-- `rustfmt`
-- `rust-analyzer`
+Unlike many quadtree implementations, the library makes no assumptions about
+what the stored cell data represents. Cells may contain error estimates,
+physical measurements, classifications, interpolation coefficients,
+probabilities, or arbitrary user-defined state.
 
-This is the **single source of truth** for Rust tooling.
+## Core concepts
 
----
+Three traits define the behaviour of the solver.
 
-### Build System (Cargo)
+### Oracle
 
-Used for:
+A [`QuadOracle`] evaluates newly-created cells.
 
-- building (`cargo build`)
-- running (`cargo run`)
-- testing (`cargo test`)
-- benchmarking (`cargo bench`)
+```
+Rect ─────────► Oracle ─────────► Cell Data
+```
 
----
+The oracle encapsulates the application-specific numerical work while the
+quadtree manages only geometry and refinement.
 
-### Nix Integration (Crane)
+### Cell score
 
-Used for:
+The refinement engine measures progress using a scalar score supplied by the
+cell data.
 
-- reproducible builds (`nix build`)
-- CI-style checks (`nix flake check`)
+```
+Cell Data ─────────► CellScore
+```
 
-Crane ensures:
+By default the global progress measure is the maximum score over all leaves.
+Refinement therefore terminates once every leaf satisfies the requested
+tolerance.
 
-- consistent builds across machines
-- dependency caching
-- integration with Nix CI pipelines
+### Refinement policy
 
----
+A [`RefinementPolicy`] determines *which* leaf should be subdivided next.
 
-### Task Runner (`just`)
+The crate provides several built-in policies, including
 
-Provides:
+- largest-area refinement,
+- maximum score refinement,
+- weighted score refinement.
 
-- short, memorable commands
-- a unified developer interface
+Custom policies can easily be implemented for application-specific
+refinement strategies.
 
----
+## Running a refinement
 
-## Getting Started
+The simplest interface is [`run`], which uses the default weighted-score
+refinement policy.
 
-Enter the development shell:
+```rust
+use quadtree_core::{
+    run,
+    QuadTreeConfig,
+    Rect,
+    QuadOracle,
+    CellScore,
+};
 
-    nix develop
+#[derive(Clone, Copy, Debug)]
+struct Score(f64);
 
-Or enable automatic loading:
+impl CellScore<f64> for Score {
+    fn score(&self) -> f64 {
+        self.0
+    }
+}
 
-    direnv allow
+struct Oracle;
 
-Verify setup:
+impl QuadOracle<f64> for Oracle {
+    type Data = Score;
 
-    just init
+    fn evaluate(&mut self, bounds: Rect<f64>) -> Self::Data {
+        Score(bounds.area())
+    }
+}
 
-Run the application:
+let domain = Rect::new(0.0, 1.0, 0.0, 1.0)?;
 
-    just run
+let config = QuadTreeConfig::new(0.01);
 
----
+let result = run(domain, Oracle, config)?;
 
-## Project Layout
+println!("leaf count = {}", result.leaf_count());
+```
 
-    .
-    ├── flake.nix
-    ├── justfile
-    ├── Cargo.toml
-    ├── rust-toolchain.toml
-    ├── .cargo/
-    ├── src/
-    │   ├── lib.rs
-    │   ├── main.rs
-    │   └── cli.rs
-    ├── tests/
-    ├── benches/
-    └── .config/
+Alternative refinement strategies can be selected using
+[`run_with_policy`].
 
-- `lib.rs` — reusable library logic
-- `main.rs` — application entrypoint
-- `cli.rs` — command-line interface
-- `tests/` — integration tests
-- `benches/` — Criterion benchmarks
+## Stopping criteria
 
----
+The solver uses Trellis policies to terminate refinement.
 
-## Common Workflows
+By default these include
 
-### Run the application
+- maximum iteration count,
+- target score,
+- lack of progress.
 
-    just run
+Additional policies may be composed without changing the refinement
+algorithm.
 
-Pass CLI arguments:
+## Examples
 
-    just run --name Alice
+The `examples/` directory contains several complete applications:
 
-JSON output:
+- **geometry_only** — balanced geometric subdivision using largest-area
+  refinement.
+- **sine_cosine_error** — adaptive refinement driven by a local interpolation
+  error estimate.
+- **circle_boundary** — refinement concentrated around an implicit interface
+  represented by a signed-distance function.
 
-    just run-json Alice
-
----
-
-### Development loop
-
-    just check
-    just test
-    just run
-
----
-
-### Formatting and linting
-
-Format code:
-
-    just fmt
-
-Check formatting:
-
-    just fmt-check
-
-Run clippy:
-
-    just lint
-
----
-
-### Testing
-
-Run standard tests:
-
-    just test
-
-Run nextest (faster):
-
-    just nextest
-
----
-
-### Benchmarking
-
-    just bench
-
----
-
-### Coverage
-
-Run coverage:
-
-    just coverage
-
-If this fails on your platform:
-
-    just coverage-llvm
-
-Note:
-
-- Default Tarpaulin backend uses `ptrace` (Linux x86_64 only)
-- LLVM backend works more broadly
-
----
-
-## Nix-Based Workflows
-
-### Build with Nix (Crane)
-
-    nix build
-
-This builds the crate in a fully reproducible environment.
-
----
-
-### Run all checks
-
-    nix flake check
-
-This runs:
-
-- build
-- clippy
-- tests
-- docs
-- formatting checks
-
-This is equivalent to a CI pipeline.
-
----
-
-### When to use Cargo vs Nix
-
-| Task                | Tool     |
-|--------------------|----------|
-| Fast iteration     | Cargo    |
-| CI / reproducible  | Nix/Crane |
-| Developer commands | just     |
-
----
-
-## CLI Example
-
-    just run --name Alice
-    Hello, Alice!
-
-    just run-json Alice
-    {"message":"Hello, Alice!"}
-
----
-
-## Reproducibility
-
-- `flake.lock` pins:
-  - Rust toolchain (via Fenix)
-  - system dependencies
-- `Cargo.lock` pins crate versions
-- Crane ensures consistent builds across machines
-
----
+These examples demonstrate how the same refinement engine can be reused with
+entirely different refinement objectives.
 
 ## Philosophy
 
-- **Fenix defines the toolchain**
-- **Cargo is the source of truth for builds**
-- **Crane integrates Cargo into Nix**
-- **just provides ergonomics**
+This crate intentionally separates concerns.
 
-Each tool has a single, clear responsibility.
+- Geometry is handled by the quadtree.
+- Numerical evaluation is handled by the oracle.
+- Refinement strategy is handled by policies.
+- Execution is handled by Trellis.
 
----
+By keeping these components independent, sophisticated adaptive algorithms
+can be constructed by composing small, reusable building blocks rather than
+modifying the underlying tree implementation.
 
-## Next Steps
-
-Typical extensions:
-
-- add subcommands via `clap`
-- introduce structured logging (`tracing`)
-- split into multiple crates (workspace)
-- add external dependencies via `pkg-config` + Nix
-- integrate CI using `nix flake check`
-
----
+License: MIT

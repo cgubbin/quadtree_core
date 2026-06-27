@@ -1,13 +1,13 @@
 [package]
-name = "quadtree"
+name = "quadtree_core"
 version = "0.1.0"
 edition = "2024"
 rust-version="1.85"
-description = "Rust project template with library and binary"
+description = "Simple implementation of a quadtree algorithm"
 license = "MIT"
 
 [lib]
-name = "quadtree"
+name = "quadtree_core"
 path = "src/lib.rs"
 
 
@@ -18,7 +18,6 @@ trellis-runner = "0.4.1"
 
 [dev-dependencies]
 approx = "0.5.1"
-criterion = "0.5"
 
 # [[bench]]
 # name = "hello_bench"
