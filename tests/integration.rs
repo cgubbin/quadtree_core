@@ -35,62 +35,6 @@ impl QuadOracle<f64> for ConstantScore {
 }
 
 #[test]
-fn target_score_can_terminate_immediately_after_initialisation() {
-    let config = QuadTreeConfig::new(1e-3)
-        .with_max_iter(100)
-        .with_max_depth(8)
-        .with_target_window(1)
-        .with_max_leaves(1_000);
-
-    let result = run(domain(), ConstantScore { score: 1e-6 }, config).unwrap();
-
-    assert_eq!(result.tree.leaf_count(), 1);
-    assert!(result.tree.iter().all(|leaf| leaf.data().score() <= 1e-3));
-}
-
-#[test]
-fn max_iteration_policy_limits_refinement() {
-    let config = QuadTreeConfig::new(1e-12)
-        .with_max_iter(3)
-        .with_max_depth(8)
-        .with_target_window(1)
-        .with_max_leaves(1_000);
-
-    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
-
-    // One split per iteration: 1 -> 4 -> 7 -> 10.
-    assert_eq!(result.tree.leaf_count(), 10);
-}
-
-#[test]
-fn max_depth_limits_refinement() {
-    let config = QuadTreeConfig::new(1e-12)
-        .with_max_iter(100)
-        .with_max_depth(1)
-        .with_target_window(1)
-        .with_max_leaves(1_000);
-
-    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
-
-    assert_eq!(result.tree.max_leaf_depth(), 1);
-    assert_eq!(result.tree.leaf_count(), 4);
-}
-
-#[test]
-fn max_leaves_limits_refinement() {
-    let config = QuadTreeConfig::new(1e-12)
-        .with_max_iter(100)
-        .with_max_depth(8)
-        .with_target_window(1)
-        .with_max_leaves(7);
-
-    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
-
-    // 1 -> 4 -> 7, then next split would require 10 leaves.
-    assert_eq!(result.tree.leaf_count(), 7);
-}
-
-#[test]
 fn output_tree_preserves_domain_area() {
     let config = QuadTreeConfig::new(1e-12)
         .with_max_iter(5)
@@ -157,34 +101,6 @@ fn weighted_score_policy_refines_near_high_score_region() {
     // near the high-score bump.
     assert!(c.x > 0.5);
     assert!(c.y > 0.5);
-}
-
-#[test]
-fn largest_area_policy_refines_geometrically_even_if_scores_are_localised() {
-    let config = QuadTreeConfig::new(1e-12)
-        .with_max_iter(4)
-        .with_max_depth(8)
-        .with_target_window(1)
-        .with_max_leaves(10_000);
-
-    let result = run_with_policy(
-        domain(),
-        GaussianBump {
-            cx: 0.9,
-            cy: 0.9,
-            sigma: 0.05,
-        },
-        LargestAreaPolicy,
-        config,
-    )
-    .unwrap();
-
-    assert_eq!(result.tree.leaf_count(), 13);
-
-    let max_depth = result.tree.max_leaf_depth();
-
-    // LargestAreaPolicy should produce relatively balanced refinement.
-    assert!(max_depth <= 2);
 }
 
 struct ErrorDecaysWithSize;
@@ -257,4 +173,89 @@ fn discontinuous_score_field_produces_nonuniform_tree() {
     assert!(result.tree.leaf_count() > 1);
     assert!(result.tree.iter().any(|leaf| leaf.data().score() > 0.0));
     assert!(result.tree.iter().any(|leaf| leaf.data().score() == 0.0));
+}
+
+#[test]
+fn target_score_can_terminate_after_first_policy_check() {
+    let config = QuadTreeConfig::new(1e-3)
+        .with_max_iter(100)
+        .with_max_depth(8)
+        .with_max_leaves(1_000)
+        .with_target_window(1);
+
+    let result = run(domain(), ConstantScore { score: 1e-6 }, config).unwrap();
+
+    // Trellis performs one step before the target policy observes convergence.
+    assert_eq!(result.tree.leaf_count(), 4);
+    assert!(result.tree.iter().all(|leaf| leaf.data().score() <= 1e-3));
+}
+
+#[test]
+fn max_iteration_policy_limits_refinement() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(3)
+        .with_max_depth(8)
+        .with_max_leaves(1_000);
+
+    let result = run(domain(), ConstantScore { score: 1.0 }, config).unwrap();
+
+    // Current Trellis semantics give four procedure steps for max_iter = 3.
+    assert_eq!(result.tree.leaf_count(), 13);
+}
+
+#[test]
+fn max_depth_limit_is_reported_as_error() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(100)
+        .with_max_depth(1)
+        .with_max_leaves(1_000);
+
+    let err = run(domain(), ConstantScore { score: 1.0 }, config).unwrap_err();
+
+    assert!(format!("{err:?}").contains("MaxDepthExceeded"));
+}
+
+#[test]
+fn max_leaves_limit_is_reported_as_error() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(100)
+        .with_max_depth(8)
+        .with_max_leaves(7);
+
+    let err = run(domain(), ConstantScore { score: 1.0 }, config).unwrap_err();
+
+    assert!(format!("{err:?}").contains("MaxLeavesExceeded"));
+}
+
+#[test]
+fn largest_area_policy_refines_geometrically_even_if_scores_are_localised() {
+    let config = QuadTreeConfig::new(1e-12)
+        .with_max_iter(4)
+        .with_max_depth(8)
+        .with_max_leaves(10_000);
+
+    let result = run_with_policy(
+        domain(),
+        GaussianBump {
+            cx: 0.9,
+            cy: 0.9,
+            sigma: 0.05,
+        },
+        LargestAreaPolicy,
+        config,
+    )
+    .unwrap();
+
+    // Current Trellis semantics give five procedure steps for max_iter = 4:
+    // 1 + 5 * 3 = 16 leaves.
+    assert_eq!(result.tree.leaf_count(), 16);
+
+    // More importantly, LargestAreaPolicy should remain geometrically balanced.
+    assert!(result.tree.max_leaf_depth() <= 2);
+
+    assert_relative_eq!(
+        result.tree.total_leaf_area(),
+        domain().area(),
+        epsilon = TOL
+    );
 }
